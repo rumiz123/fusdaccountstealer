@@ -47219,3 +47219,5 @@
 2025-11-12 19:14:06,647 - INFO - Starting brute force: range 126540-9999999, workers: 200
 2025-11-12 19:14:30,129 - INFO - Stats | Processed: 500 | Found: 0 | Errors: 0 | Progress: 0.01% | Rate: 21.2/s | ETA: 129.2h
 2025-11-12 19:14:40,681 - ERROR - [19:14:40] s130473 - Status: 429 (Rate Limited)
+2025-11-13 19:06:18,849 - INFO - Resuming from log number: 130473
+2025-11-13 19:06:18,926 - INFO - Starting brute force: range 130473-9999999, workers: 200
