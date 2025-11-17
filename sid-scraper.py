@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class ClassLinkBruteForcer:
-    def __init__(self, max_workers=100, log_file="SSID-SCRAPER.log"):
+    def __init__(self, max_workers=100, log_file="logs/SSID-SCRAPER.log"):
         self.max_workers = max_workers
         self.found_ids = []
         self.lock = threading.Lock()
@@ -56,9 +56,9 @@ class ClassLinkBruteForcer:
         self.logger.addHandler(console_handler)
 
     def get_last_number(self):
-        if os.path.exists("SSID-SCRAPER.log"):
+        if os.path.exists("logs/SSID-SCRAPER.log"):
             try:
-                with open("SSID-SCRAPER.log", 'r', encoding='utf-8') as f:
+                with open("logs/SSID-SCRAPER.log", 'r', encoding='utf-8') as f:
                     lines = f.readlines()
                     for line in reversed(lines):
                         if "s" in line and "Status:" in line:

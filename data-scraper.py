@@ -42,7 +42,7 @@ class SecondPageAuthenticator:
 
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
-        file_handler = logging.FileHandler('second_page.log', encoding='utf-8')
+        file_handler = logging.FileHandler('logs/second_page.log', encoding='utf-8')
         file_handler.setFormatter(formatter)
 
         console_handler = logging.StreamHandler()
